@@ -117,12 +117,14 @@
 	throw_mode = THROW_MODE_DISABLED
 	if(hud_used)
 		hud_used.throw_icon.icon_state = "act_throw_off"
+	SEND_SIGNAL(src, COMSIG_LIVING_THROW_MODE_TOGGLE, throw_mode)
 
 
 /mob/living/carbon/proc/throw_mode_on(mode = THROW_MODE_TOGGLE)
 	throw_mode = mode
 	if(hud_used)
 		hud_used.throw_icon.icon_state = "act_throw_on"
+	SEND_SIGNAL(src, COMSIG_LIVING_THROW_MODE_TOGGLE, throw_mode)
 
 /mob/proc/throw_item(atom/target)
 	SEND_SIGNAL(src, COMSIG_MOB_THROW, target)
@@ -248,7 +250,7 @@
 		var/obj/item/restraints/cuffs = src.get_item_by_slot(ITEM_SLOT_HANDCUFFED)
 		buckle_cd = cuffs.breakouttime
 
-	visible_message(span_warning("[src] attempts to unbuckle [p_them()]self!"), 
+	visible_message(span_warning("[src] attempts to unbuckle [p_them()]self!"),
 				span_notice("You attempt to unbuckle yourself... \
 				(This will take around [DisplayTimeText(buckle_cd)] and you must stay still.)"))
 
@@ -256,7 +258,7 @@
 		if(buckled)
 			to_chat(src, span_warning("You fail to unbuckle yourself!"))
 		return
-	
+
 	if(QDELETED(src) || isnull(buckled))
 		return
 
@@ -277,8 +279,8 @@
 		type = 2
 	if(I)
 		if(type == 1)
-			changeNext_move(CLICK_CD_BREAKOUT)
-			last_special = world.time + CLICK_CD_BREAKOUT
+			changeNext_move(I.resist_cooldown)
+			last_special = world.time + I.resist_cooldown
 		if(type == 2)
 			changeNext_move(CLICK_CD_RANGE)
 			last_special = world.time + CLICK_CD_RANGE
@@ -419,6 +421,9 @@
 	if((HAS_TRAIT(src, TRAIT_NOHUNGER) || HAS_TRAIT(src, TRAIT_TOXINLOVER)) && !force)
 		return TRUE
 
+	if(!force && HAS_TRAIT(src, TRAIT_STRONG_STOMACH))
+		lost_nutrition *= 0.5
+
 	SEND_SIGNAL(src, COMSIG_CARBON_VOMITED, distance, force)
 
 	// cache some stuff that we'll need later (at least multiple times)
@@ -435,7 +440,10 @@
 				span_userdanger("You try to throw up, but there's nothing in your stomach!"),
 			)
 		if(stun)
-			Stun(20 SECONDS)
+			var/stun_time = 20 SECONDS
+			if(HAS_TRAIT(src, TRAIT_STRONG_STOMACH))
+				stun_time *= 0.5
+			Stun(stun_time)
 		if(knockdown)
 			Knockdown(20 SECONDS)
 		return TRUE
@@ -458,11 +466,14 @@
 				add_mood_event("vomit", /datum/mood_event/vomit)
 
 	if(stun)
-		Stun(8 SECONDS)
+		var/stun_time = 8 SECONDS
+		if(!blood && HAS_TRAIT(src, TRAIT_STRONG_STOMACH))
+			stun_time *= 0.5
+		Stun(stun_time)
 	if(knockdown)
 		Knockdown(8 SECONDS)
 
-	playsound(get_turf(src), 'sound/effects/splat.ogg', 50, TRUE)
+	playsound(src, 'sound/effects/splat.ogg', 50, TRUE)
 
 	var/need_mob_update = FALSE
 	var/turf/location = get_turf(src)
@@ -642,12 +653,8 @@
  */
 /mob/living/carbon/proc/update_tint()
 	var/tint = 0
-	if(isclothing(head))
-		tint += head.tint
-	if(isclothing(wear_mask))
-		tint += wear_mask.tint
-	if(isclothing(glasses))
-		tint += glasses.tint
+	for(var/obj/item/clothing/worn_item in get_equipped_items())
+		tint += worn_item.tint
 
 	var/obj/item/organ/internal/eyes/eyes = get_organ_slot(ORGAN_SLOT_EYES)
 	if(eyes)
@@ -1120,14 +1127,14 @@
 			return
 		var/list/limb_list = list()
 		if(edit_action == "remove")
-			for(var/obj/item/bodypart/B as anything in bodyparts)
-				limb_list += B.body_zone
+			for(var/obj/item/bodypart/iter_part as anything in bodyparts)
+				limb_list += iter_part.body_zone
 				limb_list -= BODY_ZONE_CHEST
 		else
 			limb_list = list(BODY_ZONE_HEAD, BODY_ZONE_L_ARM, BODY_ZONE_R_ARM, BODY_ZONE_L_LEG, BODY_ZONE_R_LEG, BODY_ZONE_CHEST)
 		var/result = input(usr, "Please choose which bodypart to [edit_action]","[capitalize(edit_action)] Bodypart") as null|anything in sort_list(limb_list)
 		if(result)
-			var/obj/item/bodypart/BP = get_bodypart(result)
+			var/obj/item/bodypart/part = get_bodypart(result)
 			var/list/limbtypes = list()
 			switch(result)
 				if(BODY_ZONE_CHEST)
@@ -1144,9 +1151,9 @@
 					limbtypes = typesof(/obj/item/bodypart/leg/right)
 			switch(edit_action)
 				if("remove")
-					if(BP)
-						BP.drop_limb()
-						admin_ticket_log("[key_name_admin(usr)] has removed [src]'s [parse_zone(BP.body_zone)]")
+					if(part)
+						part.drop_limb()
+						admin_ticket_log("[key_name_admin(usr)] has removed [src]'s [part.plaintext_zone]")
 					else
 						to_chat(usr, span_boldwarning("[src] doesn't have such bodypart."))
 						admin_ticket_log("[key_name_admin(usr)] has attempted to modify the bodyparts of [src]")
@@ -1154,8 +1161,8 @@
 					var/limb2add = input(usr, "Select a bodypart type to add", "Add/Replace Bodypart") as null|anything in sort_list(limbtypes)
 					var/obj/item/bodypart/new_bp = new limb2add()
 					if(new_bp.replace_limb(src, special = TRUE))
-						admin_ticket_log("key_name_admin(usr)] has replaced [src]'s [BP.type] with [new_bp.type]")
-						qdel(BP)
+						admin_ticket_log("key_name_admin(usr)] has replaced [src]'s [part.type] with [new_bp.type]")
+						qdel(part)
 					else
 						to_chat(usr, "Failed to replace bodypart! They might be incompatible.")
 						admin_ticket_log("[key_name_admin(usr)] has attempted to modify the bodyparts of [src]")
@@ -1235,35 +1242,35 @@
 		update_worn_back(0)
 		. = TRUE
 
-	if(head?.wash(clean_types))
-		update_worn_head()
-		. = TRUE
-
 	// Check and wash stuff that can be covered
 	var/obscured = check_obscured_slots()
 
+	if(!(obscured & ITEM_SLOT_HEAD) && head?.wash(clean_types))
+		update_worn_head()
+		. = TRUE
+
 	// If the eyes are covered by anything but glasses, that thing will be covering any potential glasses as well.
-	if(glasses && is_eyes_covered(ITEM_SLOT_MASK|ITEM_SLOT_HEAD) && glasses.wash(clean_types))
+	if(is_eyes_covered(ITEM_SLOT_MASK|ITEM_SLOT_HEAD) && glasses?.wash(clean_types))
 		update_worn_glasses()
 		. = TRUE
 
-	if(wear_mask && !(obscured & ITEM_SLOT_MASK) && wear_mask.wash(clean_types))
+	if(!(obscured & ITEM_SLOT_MASK) && wear_mask?.wash(clean_types))
 		update_worn_mask()
 		. = TRUE
 
-	if(ears && !(obscured & ITEM_SLOT_EARS) && ears.wash(clean_types))
-		update_inv_ears()
+	if(!(obscured & ITEM_SLOT_EARS) && ears?.wash(clean_types))
+		update_worn_ears()
 		. = TRUE
 
-	if(wear_neck && !(obscured & ITEM_SLOT_NECK) && wear_neck.wash(clean_types))
+	if(!(obscured & ITEM_SLOT_NECK) && wear_neck?.wash(clean_types))
 		update_worn_neck()
 		. = TRUE
 
-	if(shoes && !(obscured & ITEM_SLOT_FEET) && shoes.wash(clean_types))
+	if(!(obscured & ITEM_SLOT_FEET) && shoes?.wash(clean_types))
 		update_worn_shoes()
 		. = TRUE
 
-	if(gloves && !(obscured & ITEM_SLOT_GLOVES) && gloves.wash(clean_types))
+	if(!(obscured & ITEM_SLOT_GLOVES) && gloves?.wash(clean_types))
 		update_worn_gloves()
 		. = TRUE
 

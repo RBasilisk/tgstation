@@ -4,8 +4,8 @@
 	icon = 'icons/obj/machines/lathes.dmi'
 	icon_state = "autolathe"
 	density = TRUE
-	//Energy cost per full stack of sheets worth of materials used. Material insertion is 40% of this.
-	active_power_usage = 25 * BASE_MACHINE_ACTIVE_CONSUMPTION
+	///Energy cost per full stack of sheets worth of materials used. Material insertion is 40% of this.
+	active_power_usage = 0.025 * STANDARD_CELL_RATE
 	circuit = /obj/item/circuitboard/machine/autolathe
 	layer = BELOW_OBJ_LAYER
 	processing_flags = NONE
@@ -353,6 +353,7 @@
 	created.pixel_x = created.base_pixel_x + rand(-6, 6)
 	created.pixel_y = created.base_pixel_y + rand(-6, 6)
 	created.forceMove(target)
+	SSblackbox.record_feedback("nested tally", "lathe_printed_items", 1, list("[type]", "[created.type]"))
 
 	if(is_stack)
 		items_remaining = 0

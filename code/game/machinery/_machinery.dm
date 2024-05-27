@@ -766,13 +766,14 @@
 		return
 	update_last_used(user)
 
-/obj/machinery/item_interaction(mob/living/user, obj/item/tool, list/modifiers, is_right_clicking)
+/obj/machinery/base_item_interaction(mob/living/user, obj/item/tool, list/modifiers)
 	if(SEND_SIGNAL(user, COMSIG_TRY_USE_MACHINE, src) & COMPONENT_CANT_USE_MACHINE_TOOLS)
-		return ITEM_INTERACT_ANY_BLOCKER
+		return ITEM_INTERACT_BLOCKING
+
 	. = ..()
-	if(. & ITEM_INTERACT_BLOCKING)
-		return
-	update_last_used(user)
+	if(.)
+		update_last_used(user)
+	return .
 
 /obj/machinery/_try_interact(mob/user)
 	if((interaction_flags_machine & INTERACT_MACHINE_WIRES_IF_OPEN) && panel_open && (attempt_wire_interaction(user) == WIRE_INTERACTION_BLOCK))
@@ -1145,9 +1146,6 @@
 /obj/machinery/proc/on_deconstruction(disassembled)
 	PROTECTED_PROC(TRUE)
 	return
-
-/obj/machinery/proc/can_be_overridden()
-	. = 1
 
 /obj/machinery/zap_act(power, zap_flags)
 	if(prob(85) && (zap_flags & ZAP_MACHINE_EXPLOSIVE) && !(resistance_flags & INDESTRUCTIBLE))
